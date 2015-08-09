@@ -1,0 +1,42 @@
+apply plugin: 'eclipse'
+apply plugin: 'groovy'
+apply plugin: 'idea'
+apply plugin: 'java'
+
+version='1.0.0'
+
+tasks.withType(JavaCompile) {
+    sourceCompatibility = '1.7'
+    targetCompatibility = '1.7'
+}
+tasks.withType(GroovyCompile) {
+    sourceCompatibility = '1.7'
+    targetCompatibility = '1.7'
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		url 'https://raw.github.com/java-decompiler/mvn-repo/master'
+	}
+}
+	
+dependencies {
+    compile 'org.codehaus.groovy:groovy:2.4.0'
+    compile 'org.codehaus.groovy:groovy-swing:2.4.0'
+    compile 'org.codehaus.groovy:groovy-xml:2.4.0'
+    compile 'com.fifesoft:rsyntaxtextarea:2.5.6'
+    compile 'org.antlr:antlr4-runtime:4.5'
+    compile 'jd:jd-core:0.7.1'
+    compile 'jd.jd-gui:api:1.0.0'
+    compile 'jd.jd-gui:app:1.4.0'
+    compile 'jd.jd-gui:services:1.4.0'
+    testCompile 'org.codehaus.groovy:groovy-test:2.4.0'
+}
+
+// 'cleanIdea' task extension //
+cleanIdea {
+    file(project.name + '.iws').delete()
+    ant.delete(dir: 'out')
+}
+
