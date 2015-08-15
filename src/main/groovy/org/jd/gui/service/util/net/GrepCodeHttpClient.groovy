@@ -33,11 +33,11 @@ class GrepCodeHttpClient {
 
         if (!parent.isDirectory() && parent.path.toLowerCase().endsWith('.jar') && !FAILURES.containsKey(parent.uri)) {
             // Search MD5 checksum
-            String md5Checksum = searchMd5Checksum(parent)
+            def md5Checksum = searchMd5Checksum(parent)
 
             // Cut extension
             def path = entry.path
-            def truncatedPath = path.substring(0, path.length() - 6 /* .class */)
+            def truncatedPath = path.substring(0, path.length() - 6) // 6 = ".class".length()
 
             // Build URL
             def url = new URL(GREPCODE_SOURCEFILE_URL_PREFIX + md5Checksum + '/' + truncatedPath + GREPCODE_SOURCEFILE_URL_SUFFIX)
@@ -51,15 +51,21 @@ class GrepCodeHttpClient {
 
                 switch (connection.responseCode) {
                     case 200:
-                    String source = connection.inputStream.text
+                        String source = connection.inputStream.text
 
-                    // Store source
-                    SOURCES.put(entry.uri, source)
-
-                    return source
+                        if (source && (source.charAt(0) != '<')) {
+                            // Success -> Store & return source
+                            SOURCES.put(entry.uri, source)
+                            return source
+                        } else {
+                            // Empty response or error HTML page -> Store failure to block future searches on this JAR file
+                            FAILURES.put(parent.uri, Boolean.TRUE)
+                            return null
+                        }
                     case 404:
-                        // Store failure to block future searches on this JAR file
+                        // Not Found -> Store failure to block future searches on this JAR file
                         FAILURES.put(parent.uri, Boolean.TRUE)
+                        return null
                 }
             } catch(Exception ignore) {
             }
@@ -69,9 +75,9 @@ class GrepCodeHttpClient {
     }
 
     static InputStream downloadRemoteSourceArchive(Container.Entry entry) {
-        if (! entry.isDirectory()) {
+        if (!entry.isDirectory() && !FAILURES.containsKey(entry.uri)) {
             // Search MD5 checksum
-            String md5Checksum = searchMd5Checksum(entry)
+            def md5Checksum = searchMd5Checksum(entry)
 
             // Build URL
             def url = new URL(GREPCODE_SOURCEARCHIVE_URL_PREFIX + md5Checksum + GREPCODE_SOURCEARCHIVE_URL_SUFFIX)
@@ -83,8 +89,24 @@ class GrepCodeHttpClient {
                 connection.connectTimeout = 20000
                 connection.useCaches = true
 
-                if(connection.responseCode == 200) {
-                    return connection.inputStream
+                switch (connection.responseCode) {
+                    case 200:
+                        def inputStream = new PushbackInputStream(connection.inputStream)
+                        int firstByte = inputStream.read()
+
+                        if (firstByte != '<') {
+                            // Success -> push back byte & return stream
+                            inputStream.unread(firstByte)
+                            return inputStream
+                        } else {
+                            // Error HTML page -> Store failure to block future searches on this JAR file
+                            FAILURES.put(entry.uri, Boolean.TRUE)
+                            return null
+                        }
+                    case 404:
+                        // Not Found -> Store failure to block future searches on this JAR file
+                        FAILURES.put(entry.uri, Boolean.TRUE)
+                        return null
                 }
             } catch(Exception ignore) {
             }
@@ -101,7 +123,7 @@ class GrepCodeHttpClient {
             // Compute MD5 checksum
             def md = MessageDigest.getInstance('MD5')
             def dis = new DigestInputStream(entry.inputStream, md)
-            byte[] buffer = new byte[1024 * 10];
+            byte[] buffer = new byte[1024 * 20];
 
             try {
                 while (dis.read(buffer) != -1);

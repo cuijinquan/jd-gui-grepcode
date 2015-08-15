@@ -14,24 +14,40 @@ import org.jd.gui.spi.SourceSaver
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.zip.ZipInputStream
 
 class GrepCodeJarFileSourceSaverProvider extends ZipFileSourceSaverProvider {
 
-    void save(API api, SourceSaver.Controller controller, SourceSaver.Listener listener, Path path, Container.Entry entry) {
+    @Override
+    void saveContent(API api, SourceSaver.Controller controller, SourceSaver.Listener listener, Path rootPath, Path path, Container.Entry entry) {
         boolean activated = !'false'.equals(api.preferences.get(GrepCodeFileSaverPreferencesProvider.ACTIVATED))
 
         if (activated && !entry.isDirectory() && entry.path.toLowerCase().endsWith('.jar')) {
             def inputStream = GrepCodeHttpClient.downloadRemoteSourceArchive(entry)
 
-            if (inputStream != null) {
-                def srcZipParentPath = path.parent
+            if (inputStream) {
+                def zis = new ZipInputStream(inputStream)
 
-                if (srcZipParentPath && !Files.exists(srcZipParentPath)) {
-                    Files.createDirectories(srcZipParentPath)
-                }
+                try {
+                    def zipEntry = zis.getNextEntry()
 
-                inputStream.withCloseable { is ->
-                    Files.copy(is, path, StandardCopyOption.REPLACE_EXISTING)
+                    while (zipEntry) {
+                        def zipEntryPath = path.resolve(zipEntry.name)
+
+                        if (zipEntry.isDirectory()) {
+                            Files.createDirectories(zipEntryPath)
+                        } else {
+                            // Call listener
+                            listener.pathSaved(zipEntryPath)
+
+                            Files.createDirectories(zipEntryPath.parent)
+                            Files.copy(zis, zipEntryPath, StandardCopyOption.REPLACE_EXISTING)
+                        }
+
+                        zipEntry = zis.getNextEntry()
+                    }
+                } finally {
+                    zis.close()
                 }
 
                 // Success !
@@ -39,6 +55,6 @@ class GrepCodeJarFileSourceSaverProvider extends ZipFileSourceSaverProvider {
             }
         }
 
-        super.save(api, controller, listener, path, entry)
+        super.saveContent(api, controller, listener, rootPath, path, entry)
     }
 }
